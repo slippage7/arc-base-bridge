@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rail — Base ⇄ Arc Testnet USDC Bridge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="bg-field" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">⇄</span>
+        <span class="brand-name">Rail</span>
+      </div>
+      <div class="topbar-actions">
+        <a class="icon-btn" href="https://testnet.arcscan.app" target="_blank" rel="noreferrer" aria-label="Arc Explorer">🌐</a>
+        <a class="icon-btn" href="https://docs.arc.io" target="_blank" rel="noreferrer" aria-label="Arc Docs">☰</a>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div class="activity-row">
+        <a class="activity-pill" href="#ledger-panel">Activity <span>⏱</span></a>
+      </div>
+
+      <section class="super-card">
+        <div class="rows">
+          <div class="node-row" id="node-from" data-chain="base">
+            <div class="node-icon">◈</div>
+            <div class="node-text">
+              <span class="node-eyebrow">From</span>
+              <span class="node-label">Base Sepolia</span>
+              <span class="node-sub">chain id 84532</span>
+            </div>
+            <span class="node-pill">USDC</span>
+          </div>
+
+          <div class="rail-track" id="rail-track">
+            <div class="rail-pulse" id="rail-pulse"></div>
+            <button class="rail-switch" id="switch-direction" title="Switch direction" aria-label="Switch direction">⇅</button>
+          </div>
+
+          <div class="node-row" id="node-to" data-chain="arc">
+            <div class="node-icon node-icon-alt">◆</div>
+            <div class="node-text">
+              <span class="node-eyebrow">To</span>
+              <span class="node-label">Arc Testnet</span>
+              <span class="node-sub">USDC-denominated gas</span>
+            </div>
+            <span class="node-pill">USDC</span>
+          </div>
+        </div>
+
+        <div class="amount-block">
+          <label for="amount">Amount</label>
+          <div class="amount-row">
+            <input id="amount" inputmode="decimal" placeholder="0" value="1.00" />
+            <span class="amount-token">USDC</span>
+          </div>
+        </div>
+
+        <button class="btn-pill btn-ghost" id="connect-btn">Connect Wallet</button>
+        <p class="wallet-address" id="wallet-address" hidden></p>
+
+        <button class="btn-pill btn-primary" id="bridge-btn" disabled>Connect wallet first</button>
+        <p class="hint" id="status-hint">
+          Make sure you have testnet gas on both networks before bridging.
+        </p>
+      </section>
+
+      <section class="ledger-card" id="ledger-panel">
+        <div class="log-header">
+          <span>TRANSACTION LEDGER</span>
+          <span class="log-header-sub" id="log-status">waiting</span>
+        </div>
+        <ol class="ledger" id="ledger">
+          <li class="ledger-empty" id="ledger-empty">No transactions yet. Steps will appear here once you start a bridge.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        Arc Testnet is provided by Circle Technology Services, LLC and is not a regulated financial
+        service. Testnet assets have no real value.
+      </p>
+      <p class="foot-links">
+        <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer">USDC Faucet</a>
+        <span>·</span>
+        <a href="https://testnet.arcscan.app" target="_blank" rel="noreferrer">Arc Explorer</a>
+        <span>·</span>
+        <a href="https://docs.arc.io" target="_blank" rel="noreferrer">Arc Docs</a>
+      </p>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
