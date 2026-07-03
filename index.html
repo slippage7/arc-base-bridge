@@ -108,4 +108,78 @@
 
     <script type="module" src="/src/main.ts"></script>
   </body>
+</html>      </section>
+
+      <section class="panel" id="bridge-panel">
+        <!-- Route rail -->
+        <div class="rail" id="rail">
+          <div class="node" id="node-from" data-chain="base">
+            <span class="node-glyph">◈</span>
+            <span class="node-label">Base Sepolia</span>
+            <span class="node-sub">chain id 84532</span>
+          </div>
+
+          <div class="rail-track" id="rail-track">
+            <div class="rail-line"></div>
+            <div class="rail-pulse" id="rail-pulse"></div>
+            <button class="rail-switch" id="switch-direction" title="Yönü değiştir" aria-label="Yönü değiştir">⇄</button>
+          </div>
+
+          <div class="node" id="node-to" data-chain="arc">
+            <span class="node-glyph">◆</span>
+            <span class="node-label">Arc Testnet</span>
+            <span class="node-sub">USDC-denominated gas</span>
+          </div>
+        </div>
+
+        <!-- Amount -->
+        <div class="field">
+          <label for="amount">Miktar</label>
+          <div class="amount-row">
+            <input id="amount" inputmode="decimal" placeholder="0.00" value="1.00" />
+            <span class="token-pill">USDC</span>
+          </div>
+        </div>
+
+        <!-- Wallet -->
+        <div class="field">
+          <label>Cüzdan</label>
+          <button class="btn btn-secondary" id="connect-btn">Connect Wallet</button>
+          <p class="wallet-address" id="wallet-address" hidden></p>
+        </div>
+
+        <!-- Action -->
+        <button class="btn btn-primary" id="bridge-btn" disabled>Önce cüzdanı bağla</button>
+        <p class="hint" id="status-hint">
+          Bridge etmeden önce her iki ağda da testnet gas'ın olduğundan emin ol.
+        </p>
+      </section>
+
+      <section class="panel panel-log">
+        <div class="log-header">
+          <span>İŞLEM DEFTERİ</span>
+          <span class="log-header-sub" id="log-status">bekleniyor</span>
+        </div>
+        <ol class="ledger" id="ledger">
+          <li class="ledger-empty" id="ledger-empty">Henüz işlem yok. Bridge başlattığında adımlar burada akacak.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        Arc Testnet, Circle Technology Services, LLC tarafından sunulur ve düzenlenmiş bir finansal
+        hizmet değildir. Testnet varlıklarının gerçek bir değeri yoktur.
+      </p>
+      <p class="foot-links">
+        <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer">USDC Faucet</a>
+        <span>·</span>
+        <a href="https://testnet.arcscan.app" target="_blank" rel="noreferrer">Arc Explorer</a>
+        <span>·</span>
+        <a href="https://docs.arc.io" target="_blank" rel="noreferrer">Arc Docs</a>
+      </p>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
