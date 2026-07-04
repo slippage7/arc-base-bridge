@@ -8,9 +8,9 @@
   --row-bg: #f5f4f9;
   --line: rgba(10, 11, 26, 0.08);
   --line-soft: rgba(10, 11, 26, 0.05);
-  --indigo: #4f5eea;
-  --indigo-deep: #3a46c4;
-  --indigo-soft: #e9eafc;
+  --indigo: #1f3d73;
+  --indigo-deep: #12294f;
+  --indigo-soft: #e6ebf5;
   --amber: #b45309;
   --red: #d1372f;
   --green: #1a8f5e;
@@ -42,11 +42,11 @@ html, body {
       to bottom,
       #f2f1f6 0%,
       #f2f1f6 30%,
-      #dfe1fb 48%,
-      #97a1f2 66%,
-      #4b56c9 80%,
-      #14163a 94%,
-      #05061a 100%
+      #d7e0f0 48%,
+      #7c96c4 66%,
+      #35507e 80%,
+      #142850 94%,
+      #060d1f 100%
     );
 }
 
@@ -159,7 +159,7 @@ html, body {
   color: #fff;
   font-size: 16px;
 }
-.node-icon-alt { background: var(--ink); }
+.node-icon-alt { background: var(--indigo-deep); }
 
 .node-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .node-eyebrow {
