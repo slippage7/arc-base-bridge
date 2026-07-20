@@ -101,20 +101,28 @@ const CHAIN_PARAMS: Record<
 async function ensureChainRegistered(provider: EIP1193Provider, key: ChainKey) {
   try {
     await provider.request({
-      method: "wallet_addEthereumChain",
-      params: [CHAIN_PARAMS[key]],
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: CHAIN_PARAMS[key].chainId }],
     });
-  } catch (e) {
-    // Safe to ignore: the chain may already be registered, or the wallet
-    // doesn't support this method. The subsequent switch/sign call will
-    // surface a real error if the chain truly isn't usable.
-    console.warn("wallet_addEthereumChain failed for", key, e);
+  } catch (switchError: any) {
+    if (switchError.code === 4902) {
+      try {
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [CHAIN_PARAMS[key]],
+        });
+      } catch (addError) {
+        console.warn("wallet_addEthereumChain failed for", key, addError);
+      }
+    } else {
+      console.warn("wallet_switchEthereumChain failed for", key, switchError);
+    }
   }
 }
 
 async function requestAccount(provider: EIP1193Provider): Promise<string | null> {
-  await provider.request({ method: "eth_requestAccounts", params: undefined });
-  const accounts = (await provider.request({ method: "eth_accounts", params: undefined })) as string[];
+  await provider.request({ method: "eth_requestAccounts" });
+  const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
   return accounts[0] ?? null;
 }
 
@@ -312,7 +320,6 @@ async function runBridge() {
     const adapter = await createViemAdapterFromProvider({ provider: connectedProvider });
 
     await ensureChainRegistered(connectedProvider, fromKey);
-    await ensureChainRegistered(connectedProvider, toKey);
 
     let result: any = await kit.bridge({
       from: { adapter, chain: CHAINS[fromKey].appKitId },
