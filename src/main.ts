@@ -27,48 +27,7 @@ const CHAINS: Record<ChainKey, { appKitId: string; label: string; sub: string; e
 let fromKey: ChainKey = "base";
 let toKey: ChainKey = "arc";
 
-// ---------------------------------------------------------------------------
-// Wallet discovery (EIP-6963)
-// ---------------------------------------------------------------------------
-
-type EIP6963ProviderInfo = { uuid: string; name: string; icon: string; rdns: string };
-type EIP6963ProviderDetail = { info: EIP6963ProviderInfo; provider: EIP1193Provider };
-
-declare global {
-  interface WindowEventMap {
-    "eip6963:announceProvider": CustomEvent<EIP6963ProviderDetail>;
-  }
-}
-
-async function discoverBrowserWallets(): Promise<EIP6963ProviderDetail[]> {
-  const providers = new Map<string, EIP6963ProviderDetail>();
-
-  const handle = (event: WindowEventMap["eip6963:announceProvider"]) => {
-    providers.set(event.detail.info.uuid, event.detail);
-  };
-
-  window.addEventListener("eip6963:announceProvider", handle);
-  window.dispatchEvent(new Event("eip6963:requestProvider"));
-  await new Promise((resolve) => window.setTimeout(resolve, 250));
-  window.removeEventListener("eip6963:announceProvider", handle);
-
-  const found = [...providers.values()];
-  if (found.length > 0) return found;
-
-  // Fallback for mobile wallet in-app browsers (MetaMask Mobile, Trust Wallet,
-  // Rainbow, etc.) that inject window.ethereum but don't announce via EIP-6963.
-  const injected = (window as any).ethereum as EIP1193Provider | undefined;
-  if (injected) {
-    return [
-      {
-        info: { uuid: "injected", name: "Wallet browser", icon: "", rdns: "injected" },
-        provider: injected,
-      },
-    ];
-  }
-
-  return [];
-}
+// Removed EIP-6963 discovery for simpler window.ethereum usage.
 
 // Raw chain params so we can register them with the wallet via
 // wallet_addEthereumChain before attempting to switch/sign on them.
@@ -235,26 +194,20 @@ function addLedgerEntry(name: string, state: "pending" | "success" | "error", de
 // ---------------------------------------------------------------------------
 
 async function connectBrowserWallet() {
-  const providers = await discoverBrowserWallets();
-  if (providers.length === 0) {
-    setHint(
-      "No wallet found. On mobile, open this page inside the MetaMask app's built-in browser (MetaMask → Browser → paste the URL).",
-      "error",
-    );
-    return;
-  }
-
-  const selected =
-    providers.find(({ info }) => info.rdns === "io.metamask" || info.name === "MetaMask") ?? providers[0];
-
   connectBtn.disabled = true;
   connectBtn.textContent = "Connecting…";
 
   try {
-    const address = await requestAccount(selected.provider);
+    const ethereum = (window as any).ethereum;
+    if (!ethereum) {
+      alert("No Web3 wallet found! Please install MetaMask or use a Web3 browser.");
+      throw new Error("No wallet");
+    }
+
+    const address = await requestAccount(ethereum);
     if (!address) throw new Error("Could not retrieve account address");
 
-    connectedProvider = selected.provider;
+    connectedProvider = ethereum;
     connectedAddress = address;
 
     connectBtn.textContent = "Connected";
