@@ -272,7 +272,10 @@ async function runBridge() {
   try {
     const adapter = await createViemAdapterFromProvider({ provider: connectedProvider });
 
+    // Ensure both source and destination chains are registered in the wallet
+    // so AppKit can seamlessly switch networks during the mint phase.
     await ensureChainRegistered(connectedProvider, fromKey);
+    await ensureChainRegistered(connectedProvider, toKey);
 
     let result: any = await kit.bridge({
       from: { adapter, chain: CHAINS[fromKey].appKitId as any },
