@@ -1,5 +1,13 @@
-import { defineConfig } from "vite";
+import { defineConfig } from 'vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
-  server: { port: 5173 },
+  plugins: [
+    nodePolyfills({
+      include: ['buffer'],
+      globals: {
+        Buffer: true,
+      },
+    }),
+  ],
 });
