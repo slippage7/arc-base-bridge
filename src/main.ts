@@ -321,27 +321,27 @@ async function runBridge() {
 
     await ensureChainRegistered(connectedProvider, fromKey);
 
-    let result: any = await kit.bridge({
-      from: { adapter, chain: CHAINS[fromKey].appKitId },
-      to: { adapter, chain: CHAINS[toKey].appKitId },
-      amount,
-    });
+    const tIn = fromKey === "base" ? "ETH" : "USDC";
+    const tOut = toKey === "base" ? "ETH" : "USDC";
 
-    if (result.state === "error") {
-      addLedgerEntry("retry", "pending", "first attempt failed, retrying");
-      result = await kit.retryBridge(result, { from: adapter, to: adapter });
-    }
+    let result: any = await kit.swap({
+      from: { adapter, chain: CHAINS[fromKey].appKitId as any },
+      to: { address: connectedAddress, chain: CHAINS[toKey].appKitId as any },
+      tokenIn: tIn as any,
+      tokenOut: tOut as any,
+      amountIn: amount,
+    });
 
     if (result.state === "error") {
       const errObj: any = result.error;
       const detail =
         errObj?.message || errObj?.reason || errObj?.shortMessage ||
-        (errObj ? JSON.stringify(errObj).slice(0, 300) : "Bridge failed");
+        (errObj ? JSON.stringify(errObj).slice(0, 300) : "Swap/Bridge failed");
       throw new Error(detail);
     }
 
     setLogStatus("done", "done");
-    setHint(`Bridge complete: ${amount} USDC is now on ${CHAINS[toKey].label}.`, "success");
+    setHint(`Transfer complete: ${amount} ${tIn} sent, received ${tOut} on ${CHAINS[toKey].label}.`, "success");
   } catch (err: any) {
     console.error(err);
     setLogStatus("error", "error");
