@@ -1,4 +1,5 @@
-import type { EIP1193Provider } from "viem";
+import { createPublicClient, http } from "viem";
+import type { EIP1193Provider, Chain } from "viem";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { AppKit } from "@circle-fin/app-kit";
 
@@ -51,7 +52,11 @@ const CHAIN_PARAMS: Record<
   arc: {
     chainId: "0x4cef52",
     chainName: "Arc Testnet",
-    rpcUrls: ["https://rpc.testnet.arc.network"],
+    rpcUrls: [
+      "https://arc-testnet.rpc.thirdweb.com",
+      "https://arc-testnet.drpc.org",
+      "https://rpc.testnet.arc.network"
+    ],
     nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
     blockExplorerUrls: ["https://testnet.arcscan.app"],
   },
@@ -70,11 +75,11 @@ async function ensureChainRegistered(provider: EIP1193Provider, key: ChainKey) {
           method: "wallet_addEthereumChain",
           params: [CHAIN_PARAMS[key]],
         });
-      } catch (addError) {
-        console.warn("wallet_addEthereumChain failed for", key, addError);
+      } catch (addError: any) {
+        throw new Error(`Failed to add chain ${CHAIN_PARAMS[key].chainName} to wallet: ${addError.message || "Unknown error"}`);
       }
     } else {
-      console.warn("wallet_switchEthereumChain failed for", key, switchError);
+      throw new Error(`Failed to switch to chain ${CHAIN_PARAMS[key].chainName}: ${switchError.message || "Unknown error"}`);
     }
   }
 }
@@ -270,12 +275,21 @@ async function runBridge() {
   railPulse.classList.add("running");
 
   try {
-    const adapter = await createViemAdapterFromProvider({ provider: connectedProvider });
+    const adapter = await createViemAdapterFromProvider({ 
+      provider: connectedProvider,
+      getPublicClient: ({ chain }) => {
+        let rpcUrl = chain.rpcUrls.default.http[0];
+        if (chain.id === 5042002) { // Arc Testnet
+          rpcUrl = "https://arc-testnet.rpc.thirdweb.com";
+        }
+        return createPublicClient({ chain, transport: http(rpcUrl) });
+      }
+    });
 
     // Ensure both source and destination chains are registered in the wallet
-    // so AppKit can seamlessly switch networks during the mint phase.
-    await ensureChainRegistered(connectedProvider, fromKey);
+    // Check destination first, then source, so the wallet ends up on the source chain!
     await ensureChainRegistered(connectedProvider, toKey);
+    await ensureChainRegistered(connectedProvider, fromKey);
 
     let result: any = await kit.bridge({
       from: { adapter, chain: CHAINS[fromKey].appKitId as any },
