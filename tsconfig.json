@@ -6,7 +6,8 @@
     "lib": ["ESNext", "DOM"],
     "strict": true,
     "types": ["node"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
   "include": ["src"]
 }
