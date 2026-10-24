@@ -67,6 +67,32 @@ const CHAIN_PARAMS: Record<
   },
 };
 
+// ---------------------------------------------------------------------------
+// Wallet error helpers
+// ---------------------------------------------------------------------------
+
+// Wallets often wrap the real error, e.g. MetaMask Mobile returns
+// { code: -32603, data: { originalError: { code: 4902 } } }.
+// This collects every code found on the error and its nested errors.
+function collectErrorCodes(err: any, depth = 0): Array<number | string> {
+  if (!err || typeof err !== "object" || depth > 5) return [];
+  // App Kit's own RPC_ENDPOINT_ERROR also uses code 4001, but it is not a wallet rejection.
+  const codes: Array<number | string> = err.name === "RPC_ENDPOINT_ERROR" ? [] : [err.code];
+  for (const inner of [err.data?.originalError, err.data, err.error, err.cause]) {
+    codes.push(...collectErrorCodes(inner, depth + 1));
+  }
+  return codes.filter((c) => c !== undefined);
+}
+
+function hasErrorCode(err: unknown, code: number | string): boolean {
+  return collectErrorCodes(err).some((c) => c === code || String(c) === String(code));
+}
+
+// True when the user clicked "Reject" / "Cancel" in the wallet.
+function isUserRejection(err: unknown): boolean {
+  return hasErrorCode(err, 4001) || hasErrorCode(err, "ACTION_REJECTED");
+}
+
 async function ensureChainRegistered(provider: EIP1193Provider, key: ChainKey) {
   try {
     await provider.request({
@@ -74,13 +100,20 @@ async function ensureChainRegistered(provider: EIP1193Provider, key: ChainKey) {
       params: [{ chainId: CHAIN_PARAMS[key].chainId }],
     });
   } catch (switchError: any) {
-    if (switchError.code === 4902) {
+    if (isUserRejection(switchError)) {
+      throw new Error(`You rejected switching to ${CHAIN_PARAMS[key].chainName} in your wallet.`);
+    }
+    // 4902 = chain not added to the wallet yet (may be nested inside the error)
+    if (hasErrorCode(switchError, 4902)) {
       try {
         await provider.request({
           method: "wallet_addEthereumChain",
           params: [CHAIN_PARAMS[key]],
         });
       } catch (addError: any) {
+        if (isUserRejection(addError)) {
+          throw new Error(`You rejected adding ${CHAIN_PARAMS[key].chainName} to your wallet.`);
+        }
         throw new Error(`Failed to add chain ${CHAIN_PARAMS[key].chainName} to wallet: ${addError.message || "Unknown error"}`);
       }
     } else {
@@ -273,6 +306,15 @@ kit.on("*", (payload: any) => {
   }
 });
 
+function failedStep(result: any): any {
+  return (result?.steps ?? []).find((step: any) => step?.state === "error");
+}
+
+function wasRejectedByUser(result: any): boolean {
+  const step = failedStep(result);
+  return step?.errorCategory === "user_rejected" || isUserRejection(step?.error);
+}
+
 async function runBridge() {
   if (!connectedProvider || !connectedAddress) return;
 
@@ -307,15 +349,20 @@ async function runBridge() {
       amount,
     });
 
-    if (result.state === "error") {
+    // Retry once, but never when the user rejected the request in the wallet.
+    if (result.state === "error" && !wasRejectedByUser(result)) {
       addLedgerEntry("retry", "pending", "first attempt failed, retrying");
       result = await kit.retryBridge(result, { from: adapter, to: adapter });
     }
 
     if (result.state === "error") {
-      const errObj: any = result.error;
+      if (wasRejectedByUser(result)) {
+        throw new Error("Transaction rejected in your wallet. Nothing was retried.");
+      }
+      const failed = failedStep(result);
+      const errObj: any = failed?.error;
       const detail =
-        errObj?.message || errObj?.reason || errObj?.shortMessage ||
+        failed?.errorMessage || errObj?.shortMessage || errObj?.reason || errObj?.message ||
         (errObj ? JSON.stringify(errObj).slice(0, 300) : "Bridge failed");
       throw new Error(detail);
     }
@@ -324,9 +371,10 @@ async function runBridge() {
     setHint(`Bridge complete: ${amount} USDC is now on ${CHAINS[toKey].label}.`, "success");
   } catch (err: any) {
     console.error(err);
-    setLogStatus("error", "error");
-    const detail =
-      err?.shortMessage || err?.reason || err?.message ||
+    setLogStatus(isUserRejection(err) ? "rejected" : "error", "error");
+    const detail = isUserRejection(err)
+      ? "Request rejected in your wallet."
+      : err?.shortMessage || err?.reason || err?.message ||
       (typeof err === "string" ? err : JSON.stringify(err, Object.getOwnPropertyNames(err || {})).slice(0, 300));
     setHint(detail || "Something went wrong during the bridge.", "error");
   } finally {
