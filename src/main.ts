@@ -1,4 +1,4 @@
-import { createPublicClient, http } from "viem";
+import { createPublicClient, erc20Abi, formatUnits, http, parseUnits } from "viem";
 import type { EIP1193Provider, Chain } from "viem";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { AppKit } from "@circle-fin/app-kit";
@@ -27,6 +27,13 @@ const CHAINS: Record<ChainKey, { appKitId: string; label: string; sub: string; e
     sub: "USDC-denominated gas",
     explorerTx: (hash) => `${ARC_EXPLORER_URL}/tx/${hash}`,
   },
+};
+
+// USDC ERC-20 contracts (6 decimals on both chains), used to read the balance.
+const USDC_DECIMALS = 6;
+const USDC: Record<ChainKey, { address: `0x${string}`; rpcUrl: string }> = {
+  base: { address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", rpcUrl: "https://sepolia.base.org" },
+  arc: { address: "0x3600000000000000000000000000000000000000", rpcUrl: ARC_RPC_URL },
 };
 
 // Direction: fromKey -> toKey. Starts Base -> Arc.
@@ -146,6 +153,7 @@ const statusHint = $<HTMLParagraphElement>("status-hint");
 const ledger = $<HTMLOListElement>("ledger");
 const ledgerEmpty = $<HTMLLIElement>("ledger-empty");
 const logStatus = $<HTMLSpanElement>("log-status");
+const amountBalance = $<HTMLSpanElement>("amount-balance");
 
 // ---------------------------------------------------------------------------
 // State
@@ -153,6 +161,9 @@ const logStatus = $<HTMLSpanElement>("log-status");
 
 let connectedProvider: EIP1193Provider | null = null;
 let connectedAddress: string | null = null;
+// USDC balance on the source chain (6 decimals), or null when unknown.
+let sourceBalance: bigint | null = null;
+let bridging = false;
 const kit = new AppKit();
 
 // ---------------------------------------------------------------------------
@@ -173,16 +184,55 @@ function shortAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+// Returns an error text for the amount, or null when it is fine.
+function validateAmount(value: string): string | null {
+  const text = value.trim();
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(text)) return "Enter a valid amount";
+  if ((text.split(".")[1] ?? "").length > USDC_DECIMALS) return "Max 6 decimals";
+  const units = parseUnits(text, USDC_DECIMALS);
+  if (units <= 0n) return "Enter a valid amount";
+  if (sourceBalance !== null && units > sourceBalance) return "Not enough USDC";
+  return null;
+}
+
+async function refreshBalance() {
+  sourceBalance = null;
+  amountBalance.textContent = "";
+  setBridgeButtonState();
+  if (!connectedAddress) return;
+
+  const key = fromKey;
+  const address = connectedAddress;
+  try {
+    const client = createPublicClient({ transport: http(USDC[key].rpcUrl) });
+    const balance = await client.readContract({
+      address: USDC[key].address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [address as `0x${string}`],
+    });
+    // Ignore the answer if the user switched direction or account meanwhile.
+    if (key !== fromKey || address !== connectedAddress) return;
+    sourceBalance = balance;
+    amountBalance.textContent = `Balance: ${formatUnits(balance, USDC_DECIMALS)} USDC`;
+  } catch (err) {
+    // Balance is only a helper; if the RPC fails we simply skip the check.
+    console.warn("Could not read USDC balance", err);
+  }
+  setBridgeButtonState();
+}
+
 function setBridgeButtonState() {
+  if (bridging) return;
   if (!connectedAddress) {
     bridgeBtn.disabled = true;
     bridgeBtn.textContent = "Connect wallet first";
     return;
   }
-  const amount = Number(amountInput.value);
-  if (!amount || amount <= 0) {
+  const amountError = validateAmount(amountInput.value);
+  if (amountError) {
     bridgeBtn.disabled = true;
-    bridgeBtn.textContent = "Enter a valid amount";
+    bridgeBtn.textContent = amountError;
     return;
   }
   bridgeBtn.disabled = false;
@@ -257,6 +307,8 @@ async function connectBrowserWallet() {
     walletAddressEl.hidden = false;
     walletAddressEl.textContent = shortAddress(address);
     setHint("Wallet connected. Enter an amount and start the bridge.");
+    listenToWallet(ethereum);
+    refreshBalance();
   } catch (err) {
     console.error(err);
     connectBtn.disabled = false;
@@ -265,6 +317,42 @@ async function connectBrowserWallet() {
   } finally {
     setBridgeButtonState();
   }
+}
+
+function resetWallet() {
+  connectedProvider = null;
+  connectedAddress = null;
+  connectBtn.disabled = false;
+  connectBtn.textContent = "Connect Wallet";
+  walletAddressEl.hidden = true;
+  walletAddressEl.textContent = "";
+  setHint("Wallet disconnected. Connect again to bridge.");
+  refreshBalance();
+}
+
+let listening = false;
+
+// Keep the UI in sync when the user changes account or network in the wallet.
+function listenToWallet(ethereum: any) {
+  if (listening || typeof ethereum?.on !== "function") return;
+  listening = true;
+
+  ethereum.on("accountsChanged", (accounts: string[]) => {
+    if (!accounts || accounts.length === 0) {
+      resetWallet();
+      return;
+    }
+    connectedAddress = accounts[0];
+    walletAddressEl.hidden = false;
+    walletAddressEl.textContent = shortAddress(accounts[0]);
+    if (!bridging) setHint("Account changed in wallet.");
+    refreshBalance();
+  });
+
+  ethereum.on("chainChanged", () => {
+    // The bridge switches chains itself, so only refresh when idle.
+    if (!bridging) refreshBalance();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +406,14 @@ function wasRejectedByUser(result: any): boolean {
 async function runBridge() {
   if (!connectedProvider || !connectedAddress) return;
 
-  const amount = amountInput.value.trim();
+  const amountError = validateAmount(amountInput.value);
+  if (amountError) {
+    setHint(amountError, "error");
+    return;
+  }
+  // Normalize e.g. "1." or ".5" to "1" / "0.5" before passing it to App Kit.
+  const amount = formatUnits(parseUnits(amountInput.value.trim(), USDC_DECIMALS), USDC_DECIMALS);
+  bridging = true;
   bridgeBtn.disabled = true;
   connectBtn.disabled = true;
   switchBtn.disabled = true;
@@ -379,9 +474,10 @@ async function runBridge() {
     setHint(detail || "Something went wrong during the bridge.", "error");
   } finally {
     railPulse.classList.remove("running");
-    connectBtn.disabled = false;
+    bridging = false;
+    connectBtn.disabled = connectedAddress !== null;
     switchBtn.disabled = false;
-    setBridgeButtonState();
+    refreshBalance();
   }
 }
 
@@ -392,7 +488,7 @@ amountInput.addEventListener("input", setBridgeButtonState);
 switchBtn.addEventListener("click", () => {
   [fromKey, toKey] = [toKey, fromKey];
   renderRoute();
-  setBridgeButtonState();
+  refreshBalance();
 });
 
 renderRoute();
