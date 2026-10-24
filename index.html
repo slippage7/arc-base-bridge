@@ -10,6 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -21,7 +22,7 @@
         <span class="brand-name">Rail</span>
       </div>
       <div class="topbar-actions">
-        <a class="icon-btn" href="https://testnet.arcscan.app" target="_blank" rel="noreferrer" aria-label="Arc Explorer">🌐</a>
+        <a class="icon-btn" href="https://explorer.testnet.arc.io" target="_blank" rel="noreferrer" aria-label="Arc Explorer">🌐</a>
         <a class="icon-btn" href="https://docs.arc.io" target="_blank" rel="noreferrer" aria-label="Arc Docs">☰</a>
       </div>
     </header>
@@ -64,7 +65,10 @@
         </div>
 
         <div class="amount-block">
-          <label for="amount">Amount</label>
+          <div class="amount-head">
+            <label for="amount">Amount</label>
+            <span class="amount-balance" id="amount-balance"></span>
+          </div>
           <div class="amount-row">
             <input id="amount" inputmode="decimal" placeholder="0" value="1.00" />
             <span class="amount-token">USDC</span>
@@ -99,7 +103,7 @@
       <p class="foot-links">
         <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer">USDC Faucet</a>
         <span>·</span>
-        <a href="https://testnet.arcscan.app" target="_blank" rel="noreferrer">Arc Explorer</a>
+        <a href="https://explorer.testnet.arc.io" target="_blank" rel="noreferrer">Arc Explorer</a>
         <span>·</span>
         <a href="https://docs.arc.io" target="_blank" rel="noreferrer">Arc Docs</a>
       </p>

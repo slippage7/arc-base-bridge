@@ -1,8 +1,19 @@
 import { AppKit } from "@circle-fin/app-kit";
 import { createViemAdapterFromPrivateKey } from "@circle-fin/adapter-viem-v2";
+import { generatePrivateKey } from "viem/accounts";
+
+// Read PROOF_PRIVATE_KEY from a local .env file if there is one (see .env.example).
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env file, that's fine
+}
 
 async function main() {
-  const privateKey = "0x1111111111111111111111111111111111111111111111111111111111111111";
+  // This script only asks for fee estimates, so the wallet needs no funds.
+  // Without PROOF_PRIVATE_KEY a random throwaway key is used.
+  // Never put a key that holds real funds here.
+  const privateKey = process.env.PROOF_PRIVATE_KEY || generatePrivateKey();
   const adapterBase = await createViemAdapterFromPrivateKey({ privateKey, chain: "Base_Sepolia" });
   const adapterArc = await createViemAdapterFromPrivateKey({ privateKey, chain: "Arc_Testnet" });
   
