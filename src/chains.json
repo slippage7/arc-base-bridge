@@ -4,6 +4,7 @@
     "name": "Arc Testnet",
     "badge": "ARC",
     "color": "#5B5CF6",
+    "logo": "/chains/arc.svg",
     "chainId": 5042002,
     "nativeCurrency": {
       "name": "USDC",
@@ -25,6 +26,7 @@
     "name": "Base Sepolia",
     "badge": "B",
     "color": "#0052FF",
+    "logo": "/chains/base.svg",
     "chainId": 84532,
     "nativeCurrency": {
       "name": "Sepolia Ether",
@@ -44,6 +46,7 @@
     "name": "Ethereum Sepolia",
     "badge": "ETH",
     "color": "#627EEA",
+    "logo": "/chains/ethereum.svg",
     "chainId": 11155111,
     "nativeCurrency": {
       "name": "Sepolia Ether",
@@ -63,6 +66,7 @@
     "name": "Arbitrum Sepolia",
     "badge": "ARB",
     "color": "#28A0F0",
+    "logo": "/chains/arbitrum.svg",
     "chainId": 421614,
     "nativeCurrency": {
       "name": "Sepolia Ether",
@@ -82,6 +86,7 @@
     "name": "OP Sepolia",
     "badge": "OP",
     "color": "#FF0420",
+    "logo": "/chains/optimism.svg",
     "chainId": 11155420,
     "nativeCurrency": {
       "name": "Sepolia Ether",
@@ -101,6 +106,7 @@
     "name": "Avalanche Fuji",
     "badge": "AV",
     "color": "#E84142",
+    "logo": "/chains/avalanche.svg",
     "chainId": 43113,
     "nativeCurrency": {
       "name": "Avalanche",
@@ -120,6 +126,7 @@
     "name": "Polygon Amoy",
     "badge": "POL",
     "color": "#8247E5",
+    "logo": "/chains/polygon.svg",
     "chainId": 80002,
     "nativeCurrency": {
       "name": "POL",
@@ -140,6 +147,7 @@
     "name": "Unichain Sepolia",
     "badge": "UNI",
     "color": "#F50DB4",
+    "logo": "/chains/unichain.svg",
     "chainId": 1301,
     "nativeCurrency": {
       "name": "Sepolia Uni",
@@ -159,6 +167,7 @@
     "name": "Linea Sepolia",
     "badge": "LN",
     "color": "#121212",
+    "logo": "/chains/linea.svg",
     "chainId": 59141,
     "nativeCurrency": {
       "name": "Sepolia Ether",
@@ -178,6 +187,7 @@
     "name": "World Chain Sepolia",
     "badge": "WLD",
     "color": "#1C1C1E",
+    "logo": "/chains/worldchain.svg",
     "chainId": 4801,
     "nativeCurrency": {
       "name": "Ether",
@@ -198,6 +208,7 @@
     "name": "Sonic Testnet",
     "badge": "S",
     "color": "#F97316",
+    "logo": "/chains/sonic.svg",
     "chainId": 14601,
     "nativeCurrency": {
       "name": "Sonic",
@@ -217,6 +228,7 @@
     "name": "Sei Testnet",
     "badge": "SEI",
     "color": "#9E1F19",
+    "logo": "/chains/sei.svg",
     "chainId": 1328,
     "nativeCurrency": {
       "name": "Sei",
@@ -236,6 +248,7 @@
     "name": "Ink Sepolia",
     "badge": "INK",
     "color": "#7132F5",
+    "logo": "/chains/ink.svg",
     "chainId": 763373,
     "nativeCurrency": {
       "name": "Sepolia Ether",
@@ -256,6 +269,7 @@
     "name": "HyperEVM Testnet",
     "badge": "HL",
     "color": "#0F9F86",
+    "logo": "/chains/hyperevm.svg",
     "chainId": 998,
     "nativeCurrency": {
       "name": "Hype",
@@ -275,6 +289,7 @@
     "name": "Monad Testnet",
     "badge": "MON",
     "color": "#836EF9",
+    "logo": "/chains/monad.svg",
     "chainId": 10143,
     "nativeCurrency": {
       "name": "Monad",
@@ -295,6 +310,7 @@
     "name": "Plume Testnet",
     "badge": "PL",
     "color": "#E5482D",
+    "logo": "/chains/plume.svg",
     "chainId": 98867,
     "nativeCurrency": {
       "name": "Plume",
@@ -314,6 +330,7 @@
     "name": "Plasma Testnet",
     "badge": "XPL",
     "color": "#14915F",
+    "logo": "/chains/plasma.svg",
     "chainId": 9746,
     "nativeCurrency": {
       "name": "Plasma",
@@ -333,6 +350,7 @@
     "name": "Codex Testnet",
     "badge": "CDX",
     "color": "#0EA5A4",
+    "logo": "/chains/codex.svg",
     "chainId": 812242,
     "nativeCurrency": {
       "name": "ETH",
@@ -352,6 +370,7 @@
     "name": "Cronos Testnet",
     "badge": "CRO",
     "color": "#0B3D91",
+    "logo": "/chains/cronos.svg",
     "chainId": 338,
     "nativeCurrency": {
       "name": "CRO",
@@ -371,6 +390,7 @@
     "name": "Edge Testnet",
     "badge": "EDG",
     "color": "#2563EB",
+    "logo": "/chains/edge.webp",
     "chainId": 33431,
     "nativeCurrency": {
       "name": "Ether",
@@ -390,6 +410,7 @@
     "name": "Injective Testnet",
     "badge": "INJ",
     "color": "#0082FA",
+    "logo": "/chains/injective.svg",
     "chainId": 1439,
     "nativeCurrency": {
       "name": "Injective",
@@ -409,6 +430,7 @@
     "name": "Morph Hoodi Testnet",
     "badge": "MPH",
     "color": "#14A800",
+    "logo": "/chains/morph.webp",
     "chainId": 2910,
     "nativeCurrency": {
       "name": "Ether",
@@ -428,6 +450,7 @@
     "name": "Pharos Testnet",
     "badge": "PHR",
     "color": "#4F46E5",
+    "logo": "/chains/pharos.webp",
     "chainId": 688689,
     "nativeCurrency": {
       "name": "Pharos",
@@ -447,6 +470,7 @@
     "name": "XDC Apothem",
     "badge": "XDC",
     "color": "#244B81",
+    "logo": "/chains/xdc.svg",
     "chainId": 51,
     "nativeCurrency": {
       "name": "TXDC",
@@ -466,6 +490,7 @@
     "name": "X Layer Testnet",
     "badge": "XL",
     "color": "#111111",
+    "logo": "/chains/xlayer.svg",
     "chainId": 1952,
     "nativeCurrency": {
       "name": "OKB",

@@ -10,7 +10,8 @@ It is built with Vite, plain TypeScript, HTML and CSS (no framework) and the off
 ## Features
 
 - **25 testnets.** Every EVM testnet that the installed App Kit can bridge with a browser wallet (list below). Send from any of them to any other one.
-- **Chain picker** with search (by name, chain ID or gas token), colored chain badges and a one-click swap button.
+- **Chain picker** with search (by name, chain ID or gas token), real chain logos and a one-click swap button. Logos are self-hosted in `public/chains/` (testnets use their parent network's logo, see `SOURCES.md`); if one ever fails to load, a monogram in the chain's color is shown instead.
+- **English and Turkish:** an EN | TR toggle in the header. The choice is remembered; the first visit follows the browser language. Strings live in `src/locales/en.json` and `src/locales/tr.json` (same keys), handled by the small `src/i18n.ts`.
 - **Wallet in the header.** Connect from the top-right button. Once connected, a short address chip lets you copy the address, open it in the explorer, or disconnect.
 - **Automatic network switching.** Rail asks your wallet to switch to the source chain. If the wallet does not know the chain yet (error `4902`), Rail adds it with the right RPC, explorer and gas token.
 - **Balances.** Rail shows your USDC balance on the source chain, plus the gas balance on both chains, and warns you when gas is missing.
@@ -88,7 +89,7 @@ Then open the `localhost` link that is printed.
   - Pick routes yourself: `npm run proof -- Base_Sepolia:Arc_Testnet Arc_Testnet:Polygon_Amoy_Testnet`
   - Every route from one chain: `npm run proof -- --all-from Arc_Testnet`
   - By default a random throwaway key is used. To use your own test wallet, copy `.env.example` to `.env` and set `PROOF_PRIVATE_KEY`. Never use a key that holds real funds.
-- `npm run verify:ui -- [url] [screenshot-dir]`: a headless Chrome test with a fake wallet (run `npm run build && npm run preview -- --port 4173` first). It checks the pickers, swap, amount validation, network switch/add requests and wallet-rejection handling, and saves desktop and mobile screenshots.
+- `npm run verify:ui -- [url] [screenshot-dir]`: a headless Chrome test with a fake wallet (run `npm run build && npm run preview -- --port 4173` first). It checks the pickers, swap, amount validation, network switch/add requests, wallet-rejection handling, both languages (no missing keys or leftover English in Turkish, no overflow at 1280px and 390px) and that every chain logo loads, and saves desktop and mobile screenshots.
 
 ## Project structure
 

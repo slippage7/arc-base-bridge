@@ -130,6 +130,24 @@ p { text-wrap: pretty; }
 .topnav a:hover { color: var(--text); background: var(--hover); }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
+/* Language toggle (EN | TR) */
+.lang-switch {
+  display: inline-flex; align-items: center; height: 40px; padding: 3px; gap: 2px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2);
+}
+.lang-switch button {
+  height: 32px; min-width: 36px; padding: 0 8px; border: 0; border-radius: 9px; background: none;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-3);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.lang-switch button:hover { color: var(--text); }
+.lang-switch button[aria-pressed="true"] {
+  color: var(--text); background: var(--surface-solid);
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.18), inset 0 0 0 1px var(--border-strong);
+}
+:root[data-theme="dark"] .lang-switch button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.1); box-shadow: inset 0 0 0 1px var(--border-strong); }
+html.i18n-pending body { visibility: hidden; }
+
 .icon-btn {
   width: 40px; height: 40px; display: inline-grid; place-items: center;
   border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
@@ -153,7 +171,7 @@ p { text-wrap: pretty; }
 .account-chip {
   display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 10px;
   border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface-2);
-  font-weight: 600; font-size: 15px; transition: background 0.2s var(--ease), border-color 0.2s;
+  font-weight: 600; font-size: 15px; white-space: nowrap; transition: background 0.2s var(--ease), border-color 0.2s;
 }
 .account-chip:hover { background: var(--hover); }
 .account-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent); }
@@ -167,7 +185,7 @@ p { text-wrap: pretty; }
 .account-menu-head { display: grid; gap: 2px; padding: 10px 10px 12px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .menu-eyebrow { font-size: 13px; color: var(--text-3); }
 .menu-address { font-weight: 700; font-size: 16px; }
-.menu-network { font-size: 14px; color: var(--text-2); }
+.menu-network { font-size: 14px; color: var(--text-2); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .account-menu button, .account-menu a {
   display: block; width: 100%; text-align: left; padding: 10px; border: 0; border-radius: 10px;
   background: none; font-size: 15px; font-weight: 500; text-decoration: none; color: var(--text);
@@ -250,7 +268,32 @@ p { text-wrap: pretty; }
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
 }
 .chain-badge.long { font-size: 11px; }
-.chain-badge.sm { width: 20px; height: 20px; font-size: 0; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.chain-badge.sm, .chain-badge.xs { width: 20px; height: 20px; font-size: 0; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.chain-badge.xs { width: 18px; height: 18px; }
+
+/* Chain logos: round, self-hosted, with a subtle ring so light and dark logos
+   both keep a clean edge on either theme. */
+.chain-logo {
+  --c: #64748b;
+  --size: 40px;
+  flex: none; position: relative; display: inline-block; width: var(--size); height: var(--size);
+  border-radius: 50%; overflow: hidden; background: var(--c);
+  box-shadow: 0 4px 12px -5px color-mix(in srgb, var(--c) 75%, transparent);
+}
+.chain-logo img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; user-select: none; }
+.chain-logo::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+:root[data-theme="light"] .chain-logo::after { box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); }
+.chain-logo.sm { --size: 20px; box-shadow: none; }
+.chain-logo.xs { --size: 18px; box-shadow: none; }
+.chain-option .chain-logo, .chain-option .chain-badge { --size: 36px; width: 36px; height: 36px; }
+.logo-pair { display: inline-flex; flex: none; }
+.logo-pair .chain-logo + .chain-logo, .logo-pair .chain-badge + .chain-badge,
+.logo-pair .chain-logo + .chain-badge, .logo-pair .chain-badge + .chain-logo {
+  margin-left: -5px; outline: 2px solid var(--surface-solid);
+}
 
 .swap-wrap { display: flex; justify-content: center; height: 14px; position: relative; z-index: 2; margin: 2px 0 10px; }
 .swap-btn {
@@ -302,7 +345,8 @@ p { text-wrap: pretty; }
 .summary > div { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; }
 .summary > div + div { border-top: 1px dashed var(--border); }
 .summary dt { color: var(--text-2); font-size: 15px; flex: none; }
-.summary dd { margin: 0; font-size: 15px; font-weight: 600; text-align: right; }
+.summary dd { margin: 0; font-size: 15px; font-weight: 600; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.summary dd .chain-logo, .summary dd .logo-pair { align-self: flex-start; margin-top: 2px; }
 
 .btn-primary {
   color: #fff; background: var(--accent-grad); background-size: 140% 140%; background-position: 0% 50%;
@@ -310,7 +354,7 @@ p { text-wrap: pretty; }
 }
 .btn-primary:hover:not(:disabled) { background-position: 100% 50%; box-shadow: 0 16px 36px -12px rgba(79, 123, 255, 1), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
 .btn-primary:disabled { background: var(--surface-3); color: var(--text-2); box-shadow: none; border-color: var(--border); }
-.btn-block { width: 100%; height: 56px; font-size: 17px; border-radius: 16px; }
+.btn-block { width: 100%; min-height: 56px; height: auto; padding: 10px 18px; font-size: 17px; border-radius: 16px; white-space: normal; text-align: center; line-height: 1.3; }
 .btn-primary.loading { position: relative; color: #fff; background: var(--accent-grad); opacity: 0.9; }
 .btn-primary.loading::before {
   content: ""; width: 18px; height: 18px; border-radius: 50%;
@@ -358,6 +402,7 @@ p { text-wrap: pretty; }
 .step[data-state="error"] .step-icon::before { content: "!"; }
 .step-body { min-width: 0; padding-top: 5px; }
 .step-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-weight: 650; font-size: 16px; }
+.step-title > :first-child { min-width: 0; overflow-wrap: anywhere; }
 .step-status { font-size: 13px; font-weight: 600; color: var(--text-3); white-space: nowrap; }
 .step[data-state="active"] .step-status { color: var(--accent); }
 :root[data-theme="dark"] .step[data-state="active"] .step-status { color: #a5a7ff; }
@@ -516,10 +561,19 @@ a.help-item:hover { background: var(--hover); border-color: var(--border-strong)
   .picker-panel { width: 100%; max-height: 82vh; border-radius: 22px 22px 0 0; transform: translateY(40px); }
   .toasts { left: 16px; right: 16px; bottom: 16px; width: auto; }
 }
+@media (max-width: 420px) {
+  .topbar-inner { gap: 8px; }
+  .topbar-actions { gap: 6px; }
+  .brand { gap: 8px; }
+  .lang-switch button { min-width: 30px; padding: 0 6px; }
+  .account-chip { padding: 0 10px; gap: 6px; font-size: 14px; }
+  .account-chip svg { display: none; }
+  .chain-sub { font-size: 13px; }
+}
 @media (max-width: 400px) {
   .btn-connect { padding: 0 12px; }
   .btn-connect svg { display: none; }
   .summary > div { flex-direction: column; gap: 2px; }
-  .summary dd { text-align: left; }
+  .summary dd { text-align: left; justify-content: flex-start; }
   .amount-box input { font-size: 26px; }
 }

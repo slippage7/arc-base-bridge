@@ -5,6 +5,10 @@ import type { EIP1193Provider, PublicClient } from "viem";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { AppKit } from "@circle-fin/app-kit";
 import chainList from "./chains.json";
+import {
+  applyTranslations, decimalSeparator, formatAmount, getLang, locale, msg, onLangChange, raw, render, setAttr, setLang, setText,
+} from "./i18n";
+import type { Key, Lang, Msg, Text } from "./i18n";
 
 // ---------------------------------------------------------------------------
 // Chain config
@@ -19,6 +23,7 @@ type ChainInfo = {
   name: string;
   badge: string;
   color: string;
+  logo: string; // self-hosted image in public/chains
   chainId: number;
   nativeCurrency: { name: string; symbol: string; decimals: number };
   rpcUrls: string[];
@@ -39,13 +44,12 @@ const ARC_RPC_URL = "https://rpc.testnet.arc.io";
 const USDC_DECIMALS = 6;
 const toHexId = (id: number) => `0x${id.toString(16)}`;
 const txUrl = (c: ChainInfo, hash: string) => c.explorerTx.replace("{hash}", hash);
-const gasLabel = (c: ChainInfo) => `${c.nativeCurrency.symbol} on ${c.name}`;
+const gasLabel = (c: ChainInfo): Msg => msg("gas.label", { symbol: c.nativeCurrency.symbol, chain: c.name });
 
 // Rough attestation time. Circle Fast Transfer is usually under a minute;
 // chains that need full finality for standard transfers can take longer.
-function estimatedTime(from: ChainInfo): string {
-  if (from.key === "Ethereum_Sepolia") return "About 1–3 minutes (up to ~20 if Fast Transfer is unavailable)";
-  return "About 1–3 minutes";
+function estimatedTime(from: ChainInfo): Key {
+  return from.key === "Ethereum_Sepolia" ? "time.slow" : "time.normal";
 }
 
 const savedRoute = (() => {
@@ -108,17 +112,30 @@ function isUserRejection(err: unknown): boolean {
   return hasErrorCode(err, 4001) || hasErrorCode(err, "ACTION_REJECTED");
 }
 
-class UserRejectedError extends Error {}
+// Errors that carry a translatable message, so the text follows the language toggle.
+class LocalizedError extends Error {
+  text: Text;
+  constructor(text: Text) {
+    super(render(text));
+    this.text = text;
+  }
+}
+class UserRejectedError extends LocalizedError {}
+
+function errorText(err: any): Text {
+  return err instanceof LocalizedError ? err.text : raw(err?.message || String(err));
+}
 
 // Short, readable error text: no request dumps, hex calldata or library versions.
-function friendlyError(err: any, fallbackMessage?: string): string {
-  if (isUserRejection(err)) return "Rejected in your wallet.";
-  const raw: string =
-    err?.shortMessage || err?.reason || fallbackMessage || err?.message ||
-    (typeof err === "string" ? err : "") || "Something went wrong.";
-  let text = raw.split(/\n|Request Arguments:|Details:|Version:|Request body:/)[0].trim();
+// Messages from App Kit, viem or the wallet are shown as they are (not translated).
+function friendlyError(err: any, fallbackMessage?: string): Text {
+  if (err instanceof LocalizedError) return err.text;
+  if (isUserRejection(err)) return msg("error.rejected");
+  const source: string =
+    err?.shortMessage || err?.reason || fallbackMessage || err?.message || (typeof err === "string" ? err : "");
+  let text = source.split(/\n|Request Arguments:|Details:|Version:|Request body:/)[0].trim();
   if (text.length > 160) text = text.slice(0, 157).trimEnd() + "…";
-  return text || "Something went wrong.";
+  return text ? raw(text) : msg("error.generic");
 }
 
 // Switch the wallet to a chain, adding it first when the wallet does not know it (4902).
@@ -127,18 +144,18 @@ async function ensureChainRegistered(provider: EIP1193Provider, c: ChainInfo) {
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: toHexId(c.chainId) }] });
   } catch (switchError: any) {
     if (isUserRejection(switchError)) {
-      throw new UserRejectedError(`You rejected switching to ${c.name} in your wallet.`);
+      throw new UserRejectedError(msg("error.switchRejected", { chain: c.name }));
     }
     if (!hasErrorCode(switchError, 4902)) {
-      throw new Error(`Could not switch to ${c.name}: ${switchError?.message || "unknown error"}`);
+      throw new LocalizedError(msg("error.switchFailed", { chain: c.name, error: switchError?.message || msg("error.unknown") }));
     }
     try {
       await provider.request({ method: "wallet_addEthereumChain", params: [addChainParams(c)] as any });
     } catch (addError: any) {
       if (isUserRejection(addError)) {
-        throw new UserRejectedError(`You rejected adding ${c.name} to your wallet.`);
+        throw new UserRejectedError(msg("error.addRejected", { chain: c.name }));
       }
-      throw new Error(`Could not add ${c.name} to your wallet: ${addError?.message || "unknown error"}`);
+      throw new LocalizedError(msg("error.addFailed", { chain: c.name, error: addError?.message || msg("error.unknown") }));
     }
   }
 }
@@ -185,8 +202,14 @@ const chainListEl = $("chain-list");
 const pickerEmpty = $("picker-empty");
 const toasts = $("toasts");
 const themeToggle = $<HTMLButtonElement>("theme-toggle");
+const langSwitch = $("lang-switch");
+const burnTitle = $("burn-title");
+const mintTitle = $("mint-title");
+const gasHelp = $("gas-help");
 
-$("chain-count").textContent = String(CHAINS.length);
+setText($("meta-title"), "meta.title", { others: CHAINS.length - 1 });
+setAttr($("meta-description"), "content", "meta.description", { more: CHAINS.length - 3 });
+setText($("hero-pill"), "hero.pill", { count: CHAINS.length });
 
 // ---------------------------------------------------------------------------
 // State
@@ -199,6 +222,8 @@ let walletChainId: number | null = null;
 let sourceBalance: bigint | null = null;
 let bridging = false;
 let connecting = false;
+// Last native (gas) balances, kept so texts can be re-rendered in another language.
+let gasBalances: { from: bigint | null; to: bigint | null; fromOk: boolean; toOk: boolean } | null = null;
 const kit = new AppKit();
 
 // ---------------------------------------------------------------------------
@@ -216,40 +241,75 @@ function shortAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function badge(c: ChainInfo, size: "md" | "sm" = "md") {
+// Monogram in the chain's brand color; only shown if a logo image fails to load.
+function badge(c: ChainInfo, size: LogoSize = "md") {
   const b = el("span", `chain-badge ${size}`, c.badge);
   b.style.setProperty("--c", c.color);
   if (c.badge.length >= 3) b.classList.add("long");
-  b.setAttribute("aria-hidden", "true");
+  b.setAttribute("role", "img");
+  setAttr(b, "aria-label", "chain.logoAlt", { chain: c.name });
   return b;
 }
 
-function formatUsdc(units: bigint): string {
+type LogoSize = "md" | "sm" | "xs";
+const LOGO_PX: Record<LogoSize, number> = { md: 40, sm: 20, xs: 18 };
+
+// Round, self-hosted chain logo with the monogram as fallback.
+function chainLogo(c: ChainInfo, size: LogoSize = "md") {
+  const wrap = el("span", `chain-logo ${size}`);
+  wrap.style.setProperty("--c", c.color);
+  wrap.dataset.chain = c.key;
+  const img = el("img");
+  img.addEventListener("error", () => wrap.replaceWith(badge(c, size)), { once: true });
+  img.width = img.height = LOGO_PX[size];
+  img.decoding = "async";
+  img.draggable = false;
+  setAttr(img, "alt", "chain.logoAlt", { chain: c.name });
+  img.src = c.logo;
+  wrap.append(img);
+  return wrap;
+}
+
+// USDC amount as a plain decimal string ("1234.5"), at least 2 decimals.
+function usdcString(units: bigint): string {
   const [whole, frac = ""] = formatUnits(units, USDC_DECIMALS).split(".");
   const trimmed = frac.replace(/0+$/, "");
-  const shown = trimmed.length < 2 ? trimmed.padEnd(2, "0") : trimmed;
-  return `${Number(whole).toLocaleString("en-US")}.${shown}`;
+  return `${whole}.${trimmed.length < 2 ? trimmed.padEnd(2, "0") : trimmed}`;
 }
 
 function formatNative(value: bigint, decimals: number): string {
   const n = Number(formatUnits(value, decimals));
   if (n === 0) return "0";
-  if (n < 0.0001) return "< 0.0001";
-  return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  if (n < 0.0001) return `< ${(0.0001).toLocaleString(locale())}`;
+  return n.toLocaleString(locale(), { maximumFractionDigits: 4 });
+}
+
+// Accepts "1.5" and "1,5"; returns a dot-decimal string or null when it is not a number.
+function normalizeAmount(value: string): string | null {
+  const text = value.trim();
+  if (text.includes(",") && text.includes(".")) return null;
+  const dotted = text.replace(",", ".");
+  return /^(\d+(\.\d*)?|\.\d+)$/.test(dotted) ? dotted : null;
 }
 
 type Tone = "info" | "success" | "error";
-function toast(title: string, body = "", tone: Tone = "info") {
+function toast(title: Text | Key, body: Text | string = "", tone: Tone = "info") {
   const t = el("div", `toast toast-${tone}`);
   t.setAttribute("role", tone === "error" ? "alert" : "status");
   const icon = el("span", "toast-icon", tone === "success" ? "✓" : tone === "error" ? "!" : "i");
   icon.setAttribute("aria-hidden", "true");
   const text = el("div", "toast-text");
-  text.append(el("strong", "", title));
-  if (body) text.append(el("span", "", body));
+  const strong = el("strong");
+  setText(strong, title);
+  text.append(strong);
+  if (body) {
+    const span = el("span");
+    setText(span, typeof body === "string" ? raw(body) : body);
+    text.append(span);
+  }
   const close = el("button", "toast-close", "×");
   close.type = "button";
-  close.setAttribute("aria-label", "Dismiss");
+  setAttr(close, "aria-label", "toast.dismiss");
   t.append(icon, text, close);
   toasts.append(t);
   const remove = () => {
@@ -260,14 +320,22 @@ function toast(title: string, body = "", tone: Tone = "info") {
   setTimeout(remove, tone === "error" ? 9000 : 5500);
 }
 
-function setHint(text: string, tone: "" | "error" | "success" = "") {
-  statusHint.textContent = text;
+let hintIsNoGas = false;
+function setHint(text: Text | Key, tone: "" | "error" | "success" = "") {
+  setText(statusHint, text);
   statusHint.className = `status-line ${tone}`.trim();
+  hintIsNoGas = false;
 }
 
-function setChip(node: HTMLElement, text: string, tone: "" | "live" | "done" | "error" = "") {
-  node.textContent = text;
+function setChip(node: HTMLElement, text: Text | Key, tone: "" | "live" | "done" | "error" = "") {
+  setText(node, text);
   node.className = `state-chip ${tone}`.trim();
+}
+
+function chainSub(c: ChainInfo) {
+  const sub = el("span", "chain-sub");
+  setText(sub, "chain.sub", { id: c.chainId, symbol: c.nativeCurrency.symbol });
+  return sub;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,10 +345,10 @@ function setChip(node: HTMLElement, text: string, tone: "" | "live" | "done" | "
 function renderSelect(button: HTMLButtonElement, c: ChainInfo) {
   button.replaceChildren();
   const text = el("span", "chain-text");
-  text.append(el("span", "chain-name", c.name), el("span", "chain-sub", `Chain ID ${c.chainId} · gas in ${c.nativeCurrency.symbol}`));
+  text.append(el("span", "chain-name", c.name), chainSub(c));
   const caret = el("span", "caret");
   caret.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  button.append(badge(c), text, caret);
+  button.append(chainLogo(c), text, caret);
   button.dataset.chain = c.key;
 }
 
@@ -289,13 +357,19 @@ function renderRoute() {
   const to = chain(toKey);
   renderSelect(fromSelect, from);
   renderSelect(toSelect, to);
-  document.querySelectorAll<HTMLElement>('[data-chain="from"]').forEach((n) => (n.textContent = from.name));
-  document.querySelectorAll<HTMLElement>('[data-chain="to"]').forEach((n) => (n.textContent = to.name));
-  sumTime.textContent = estimatedTime(from);
-  sumGas.textContent =
+  setText(burnTitle, "step.burn.title", { chain: from.name });
+  setText(mintTitle, "step.mint.title", { chain: to.name });
+  setText(sumTime, estimatedTime(from));
+  const gasText = el("span");
+  setText(
+    gasText,
     from.nativeCurrency.symbol === to.nativeCurrency.symbol && from.nativeCurrency.symbol !== "USDC"
-      ? `${from.nativeCurrency.symbol} on both ${from.name} and ${to.name}`
-      : `${gasLabel(from)} and ${gasLabel(to)}`;
+      ? msg("summary.gasBoth", { symbol: from.nativeCurrency.symbol, a: from.name, b: to.name })
+      : msg("summary.gasPair", { a: gasLabel(from), b: gasLabel(to) }),
+  );
+  const pair = el("span", "logo-pair");
+  pair.append(chainLogo(from, "xs"), chainLogo(to, "xs"));
+  sumGas.replaceChildren(pair, gasText);
   try {
     localStorage.setItem("rail:route", JSON.stringify({ from: fromKey, to: toKey }));
   } catch {
@@ -309,9 +383,7 @@ function renderRoute() {
 function renderGasHelp() {
   const from = chain(fromKey);
   const to = chain(toKey);
-  $("gas-help").textContent =
-    `For this route: ${gasLabel(from)} for approve and burn, ${gasLabel(to)} for the mint. ` +
-    `On Arc Testnet gas is paid in USDC.`;
+  setText(gasHelp, "gas.help", { from: gasLabel(from), to: gasLabel(to) });
 }
 
 // ---------------------------------------------------------------------------
@@ -325,9 +397,8 @@ function openPicker(side: "from" | "to") {
   if (bridging) return;
   pickerSide = side;
   lastFocus = document.activeElement as HTMLElement;
-  pickerTitle.textContent = side === "from" ? "Select source chain" : "Select destination chain";
-  pickerDesc.textContent =
-    side === "from" ? "USDC will be sent from this network." : "USDC will arrive on this network at the same address.";
+  setText(pickerTitle, side === "from" ? "picker.fromTitle" : "picker.toTitle");
+  setText(pickerDesc, side === "from" ? "picker.fromDesc" : "picker.toDesc");
   chainSearch.value = "";
   renderChainList();
   picker.hidden = false;
@@ -359,10 +430,15 @@ function renderChainList() {
     btn.setAttribute("role", "option");
     btn.setAttribute("aria-selected", String(c.key === current));
     const text = el("span", "chain-text");
-    text.append(el("span", "chain-name", c.name), el("span", "chain-sub", `Chain ID ${c.chainId} · gas in ${c.nativeCurrency.symbol}`));
-    btn.append(badge(c), text);
-    if (c.key === current) btn.append(el("span", "opt-tag selected", "Selected"));
-    else if (c.key === other) btn.append(el("span", "opt-tag", pickerSide === "from" ? "Destination · swap" : "Source · swap"));
+    text.append(el("span", "chain-name", c.name), chainSub(c));
+    btn.append(chainLogo(c), text);
+    const tag = (cls: string, key: Key) => {
+      const span = el("span", cls);
+      setText(span, key);
+      btn.append(span);
+    };
+    if (c.key === current) tag("opt-tag selected", "picker.selected");
+    else if (c.key === other) tag("opt-tag", pickerSide === "from" ? "picker.isDestination" : "picker.isSource");
     btn.addEventListener("click", () => chooseChain(c.key));
     li.append(btn);
     chainListEl.append(li);
@@ -409,7 +485,7 @@ async function switchWalletToSource(loud: boolean) {
     updateNetworkInfo();
   } catch (err: any) {
     // Not fatal: the bridge asks again before it starts.
-    if (loud || !(err instanceof UserRejectedError)) toast("Network not switched", err?.message || String(err), "error");
+    if (loud || !(err instanceof UserRejectedError)) toast("toast.networkNotSwitched", errorText(err), "error");
   }
 }
 
@@ -417,36 +493,45 @@ async function switchWalletToSource(loud: boolean) {
 // Balances and validation
 // ---------------------------------------------------------------------------
 
-// Returns an error text for the amount, or null when it is fine.
-function validateAmount(value: string): string | null {
-  const text = value.trim();
-  if (text === "") return "Enter an amount";
-  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(text)) return "Enter a valid number";
-  if ((text.split(".")[1] ?? "").length > USDC_DECIMALS) return "Use at most 6 decimals";
+// Returns an error message for the amount, or null when it is fine.
+function validateAmount(value: string): Msg | null {
+  if (value.trim() === "") return msg("amount.errEmpty");
+  const text = normalizeAmount(value);
+  if (text === null) return msg("amount.errNumber");
+  if ((text.split(".")[1] ?? "").length > USDC_DECIMALS) return msg("amount.errDecimals");
   const units = parseUnits(text, USDC_DECIMALS);
-  if (units <= 0n) return "Enter an amount above 0";
-  if (sourceBalance !== null && units > sourceBalance) return `Not enough USDC on ${chain(fromKey).name}`;
+  if (units <= 0n) return msg("amount.errZero");
+  if (sourceBalance !== null && units > sourceBalance) return msg("amount.errBalance", { chain: chain(fromKey).name });
   return null;
+}
+
+// Valid amount as a dot-decimal string with a leading zero ("0.5"), or null.
+function amountValue(): string | null {
+  if (validateAmount(amountInput.value)) return null;
+  const text = normalizeAmount(amountInput.value)!;
+  return text.startsWith(".") ? `0${text}` : text;
 }
 
 let balanceRequest = 0;
 async function refreshBalance() {
   const req = ++balanceRequest;
   sourceBalance = null;
-  amountBalance.textContent = "";
+  gasBalances = null;
+  setText(amountBalance, raw(""));
   maxBtn.disabled = true;
   setBridgeButtonState();
+  toMetaEl.classList.remove("warn");
   if (!connectedAddress) {
-    fromBalanceEl.textContent = "Connect a wallet to see your balance";
-    toMetaEl.textContent = "USDC arrives at the same address";
+    setText(fromBalanceEl, "from.connectHint");
+    setText(toMetaEl, "to.sameAddress");
     return;
   }
   const from = chain(fromKey);
   const to = chain(toKey);
   const address = connectedAddress as `0x${string}`;
-  fromBalanceEl.textContent = "Loading balance…";
+  setText(fromBalanceEl, "balance.loading");
   fromBalanceEl.classList.add("loading");
-  toMetaEl.textContent = "Checking gas…";
+  setText(toMetaEl, "balance.checkingGas");
 
   const [usdc, gasFrom, gasTo] = await Promise.allSettled([
     publicClientFor(from).readContract({ address: from.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] }),
@@ -458,29 +543,49 @@ async function refreshBalance() {
 
   if (usdc.status === "fulfilled") {
     sourceBalance = usdc.value;
-    const text = `${formatUsdc(usdc.value)} USDC`;
-    fromBalanceEl.textContent = `Balance: ${text}`;
-    amountBalance.textContent = `Available: ${text}`;
     maxBtn.disabled = usdc.value === 0n;
   } else {
     // The balance is only a helper; if the RPC fails we simply skip the check.
     console.warn("Could not read USDC balance", usdc.reason);
-    fromBalanceEl.textContent = "Balance unavailable right now";
   }
+  gasBalances = {
+    from: gasFrom.status === "fulfilled" ? gasFrom.value : null,
+    to: gasTo.status === "fulfilled" ? gasTo.value : null,
+    fromOk: gasFrom.status === "fulfilled",
+    toOk: gasTo.status === "fulfilled",
+  };
+  renderBalances();
 
-  const gasNote = (r: PromiseSettledResult<bigint>, c: ChainInfo) =>
-    r.status === "fulfilled" ? `${formatNative(r.value, c.nativeCurrency.decimals)} ${c.nativeCurrency.symbol}` : "unknown";
-  toMetaEl.textContent = `Gas here: ${gasNote(gasTo, to)}`;
-  const lowFrom = gasFrom.status === "fulfilled" && gasFrom.value === 0n;
-  const lowTo = gasTo.status === "fulfilled" && gasTo.value === 0n;
+  const lowFrom = gasBalances.from === 0n;
+  const lowTo = gasBalances.to === 0n;
   toMetaEl.classList.toggle("warn", lowTo);
   if (lowFrom || lowTo) {
-    const missing = [lowFrom ? gasLabel(from) : "", lowTo ? gasLabel(to) : ""].filter(Boolean).join(" and ");
-    setHint(`You have no gas yet: add ${missing} before bridging.`, "error");
-  } else if (!bridging && statusHint.classList.contains("error") && statusHint.textContent?.startsWith("You have no gas")) {
-    setHint("Gas looks good on both chains.");
+    const missing = lowFrom && lowTo
+      ? msg("summary.gasPair", { a: gasLabel(from), b: gasLabel(to) })
+      : gasLabel(lowFrom ? from : to);
+    setHint(msg("hint.noGas", { missing }), "error");
+    hintIsNoGas = true;
+  } else if (!bridging && hintIsNoGas) {
+    setHint("hint.gasOk");
   }
   setBridgeButtonState();
+}
+
+// Balance texts, rendered from the last fetched values (numbers follow the language).
+function renderBalances() {
+  if (!connectedAddress || !gasBalances) return;
+  const to = chain(toKey);
+  if (sourceBalance !== null) {
+    const value = `${formatAmount(usdcString(sourceBalance))} USDC`;
+    setText(fromBalanceEl, "balance.value", { value });
+    setText(amountBalance, "balance.available", { value });
+  } else {
+    setText(fromBalanceEl, "balance.unavailable");
+  }
+  const gasValue = gasBalances.to !== null
+    ? `${formatNative(gasBalances.to, to.nativeCurrency.decimals)} ${to.nativeCurrency.symbol}`
+    : msg("balance.unknown");
+  setText(toMetaEl, "balance.gasHere", { value: gasValue });
 }
 
 function setBridgeButtonState() {
@@ -488,29 +593,32 @@ function setBridgeButtonState() {
   const text = amountInput.value.trim();
   amountBox.classList.toggle("invalid", !!error && text !== "");
   if (error && text !== "" && connectedAddress) {
-    amountHelp.textContent = error;
+    setText(amountHelp, error);
     amountHelp.classList.add("error");
   } else {
-    amountHelp.textContent = "USDC uses 6 decimals, for example 25.5 or 0.000001.";
+    setText(amountHelp, "amount.help");
     amountHelp.classList.remove("error");
   }
   const to = chain(toKey);
-  sumReceive.textContent = error ? `— on ${to.name}` : `≈ ${text.startsWith(".") ? "0" + text : text} USDC on ${to.name}`;
+  const amount = amountValue();
+  const receive = el("span");
+  setText(receive, amount === null ? msg("summary.receiveNone", { chain: to.name }) : msg("summary.receiveValue", { amount: { amount }, chain: to.name }));
+  sumReceive.replaceChildren(chainLogo(to, "xs"), receive);
 
   if (bridging) return;
   bridgeBtn.classList.remove("loading");
   if (!connectedAddress) {
     bridgeBtn.disabled = connecting;
-    bridgeBtn.textContent = connecting ? "Connecting…" : "Connect wallet to bridge";
+    setText(bridgeBtn, connecting ? "button.connecting" : "button.connect");
     return;
   }
-  if (error) {
+  if (error || amount === null) {
     bridgeBtn.disabled = true;
-    bridgeBtn.textContent = error;
+    setText(bridgeBtn, error ?? msg("amount.errNumber"));
     return;
   }
   bridgeBtn.disabled = false;
-  bridgeBtn.textContent = `Bridge ${text.startsWith(".") ? "0" + text : text} USDC to ${to.name}`;
+  setText(bridgeBtn, "button.bridge", { amount: { amount }, chain: to.name });
 }
 
 // ---------------------------------------------------------------------------
@@ -525,11 +633,17 @@ function updateNetworkInfo() {
   if (!connectedAddress) return;
   const c = walletChainId !== null ? byId.get(walletChainId) : undefined;
   const from = chain(fromKey);
-  if (walletChainId === null) menuNetwork.textContent = "Network: unknown";
-  else menuNetwork.textContent = `Network: ${c ? c.name : `chain ${walletChainId}`}`;
+  const walletName = c ? c.name : msg("account.chainNumber", { id: walletChainId ?? 0 });
+  const networkText = el("span");
+  setText(networkText, walletChainId === null ? msg("account.networkUnknown") : msg("account.network", { name: walletName }));
+  menuNetwork.replaceChildren(...(c ? [chainLogo(c, "xs")] : []), networkText);
   const mismatch = walletChainId !== null && walletChainId !== from.chainId;
   accountChip.classList.toggle("mismatch", mismatch);
-  accountChip.title = mismatch ? `Wallet is on ${c?.name ?? `chain ${walletChainId}`}. Rail will switch to ${from.name}.` : "";
+  if (mismatch) setAttr(accountChip, "title", "account.mismatch", { wallet: walletName, chain: from.name });
+  else {
+    accountChip.removeAttribute("title");
+    accountChip.removeAttribute("data-i18n-title");
+  }
   viewAddress.href = `${from.explorer}/address/${connectedAddress}`;
 }
 
@@ -554,19 +668,19 @@ async function connectBrowserWallet() {
   if (connecting) return;
   const ethereum = getInjected();
   if (!ethereum) {
-    toast("No wallet found", "Install MetaMask, Rabby or another browser wallet, then reload this page.", "error");
-    setHint("No browser wallet found. Install one to start bridging.", "error");
+    toast("toast.noWallet", msg("toast.noWalletBody"), "error");
+    setHint("hint.noWallet", "error");
     return;
   }
   connecting = true;
   connectBtn.disabled = true;
-  connectBtn.querySelector(".connect-label")!.textContent = "Connecting…";
+  setText(connectBtn.querySelector(".connect-label")!, "connect.connecting");
   setBridgeButtonState();
   try {
     await ethereum.request({ method: "eth_requestAccounts" });
     const accounts = (await ethereum.request({ method: "eth_accounts" })) as string[];
     const address = accounts[0];
-    if (!address) throw new Error("Could not read your account address");
+    if (!address) throw new LocalizedError(msg("error.noAddress"));
     connectedProvider = ethereum;
     await readWalletChain(ethereum);
     showConnected(address);
@@ -576,19 +690,19 @@ async function connectBrowserWallet() {
       // ignore
     }
     listenToWallet(ethereum);
-    toast("Wallet connected", shortAddress(address), "success");
-    setHint("Wallet connected. Enter an amount and start the bridge.");
+    toast("toast.connected", shortAddress(address), "success");
+    setHint("hint.connected");
     refreshBalance();
     if (walletChainId !== chain(fromKey).chainId) void switchWalletToSource(false);
   } catch (err) {
     console.warn("Wallet connection failed:", err);
     const rejected = isUserRejection(err);
-    setHint(rejected ? "You rejected the connection request in your wallet." : "Wallet connection failed. Please try again.", "error");
-    toast(rejected ? "Connection rejected" : "Connection failed", rejected ? "Nothing was shared with Rail." : friendlyError(err), "error");
+    setHint(rejected ? "hint.connectRejected" : "hint.connectFailed", "error");
+    toast(rejected ? "toast.connectRejected" : "toast.connectFailed", rejected ? msg("toast.nothingShared") : friendlyError(err), "error");
   } finally {
     connecting = false;
     connectBtn.disabled = false;
-    connectBtn.querySelector(".connect-label")!.textContent = "Connect wallet";
+    setText(connectBtn.querySelector(".connect-label")!, "connect.label");
     setBridgeButtonState();
   }
 }
@@ -616,7 +730,7 @@ async function tryRestoreSession() {
   }
 }
 
-function resetWallet(message = "Wallet disconnected. Connect again to bridge.") {
+function resetWallet(message: Key = "hint.disconnected") {
   connectedProvider = null;
   connectedAddress = null;
   walletChainId = null;
@@ -636,7 +750,7 @@ async function disconnect() {
     // ignore
   }
   resetWallet();
-  toast("Disconnected", "Rail forgot your wallet for this site.");
+  toast("toast.disconnected", msg("toast.disconnectedBody"));
   // Best effort: wallets that support it also drop the site permission.
   try {
     await provider?.request({ method: "wallet_revokePermissions" as any, params: [{ eth_accounts: {} }] as any });
@@ -659,7 +773,7 @@ function listenToWallet(ethereum: any) {
       return;
     }
     showConnected(accounts[0]);
-    if (!bridging) setHint("Account changed in your wallet.");
+    if (!bridging) setHint("hint.accountChanged");
     refreshBalance();
   });
 
@@ -683,16 +797,17 @@ function stepEl(key: StepKey) {
   return stepsEl.querySelector<HTMLLIElement>(`[data-step="${key}"]`)!;
 }
 
-function setStep(key: StepKey, state: StepState, note = "", link?: { url: string; label: string }) {
+function setStep(key: StepKey, state: StepState, note?: Key, link?: { url: string; label: Msg }) {
   const li = stepEl(key);
   li.dataset.state = state;
-  const labels: Record<StepState, string> = { idle: "", active: "In progress", done: "Done", skipped: "Not needed", error: "Failed" };
-  li.querySelector(".step-status")!.textContent = note || labels[state];
+  const labels: Record<StepState, Key | null> = { idle: null, active: "step.active", done: "step.done", skipped: "step.skipped", error: "step.error" };
+  const label = note ?? labels[state];
+  setText(li.querySelector(".step-status")!, label ? msg(label) : raw(""));
   const a = li.querySelector<HTMLAnchorElement>(".step-link");
   if (a) {
     if (link) {
       a.href = link.url;
-      a.textContent = link.label;
+      setText(a, link.label);
       a.hidden = false;
     } else if (state === "idle") {
       a.hidden = true;
@@ -714,37 +829,45 @@ function stepKeyFor(method: string): StepKey | null {
   return null;
 }
 
-const STEP_TITLES: Record<StepKey, string> = {
-  approve: "Approve USDC",
-  burn: "Burn USDC",
-  attestation: "Circle attestation",
-  mint: "Mint USDC",
+const STEP_TITLES: Record<StepKey, Key> = {
+  approve: "stepName.approve",
+  burn: "stepName.burn",
+  attestation: "stepName.attestation",
+  mint: "stepName.mint",
 };
 
-function addLedgerEntry(opts: { title: string; chain?: ChainInfo; state: "pending" | "success" | "error"; detail: string; url?: string }) {
+function addLedgerEntry(opts: { title: Text; chain?: ChainInfo; state: "pending" | "success" | "error"; detail: Text; url?: string }) {
   ledgerEmpty.remove();
   const li = el("li", `entry state-${opts.state}`);
   const icon = el("span", "entry-icon", opts.state === "success" ? "✓" : opts.state === "error" ? "!" : "•");
   icon.setAttribute("aria-hidden", "true");
   const main = el("div", "entry-main");
   const top = el("div", "entry-top");
-  top.append(el("span", "entry-title", opts.title));
+  const title = el("span", "entry-title");
+  setText(title, opts.title);
+  top.append(title);
   if (opts.chain) {
     const tag = el("span", "entry-chain");
-    tag.append(badge(opts.chain, "sm"), document.createTextNode(opts.chain.name));
+    tag.append(chainLogo(opts.chain, "sm"), el("span", "", opts.chain.name));
     top.append(tag);
   }
   const bottom = el("div", "entry-bottom");
-  bottom.append(el("span", "entry-detail", opts.detail));
-  bottom.append(el("time", "entry-time", new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })));
+  const detail = el("span", "entry-detail");
+  setText(detail, opts.detail);
+  const now = new Date();
+  const time = el("time", "entry-time");
+  time.dateTime = now.toISOString();
+  setText(time, "ledger.time", { time: { time: now.toISOString() } });
+  bottom.append(detail, time);
   main.append(top, bottom);
   li.append(icon, main);
   if (opts.url) {
-    const link = el("a", "entry-link", "View ↗");
+    const link = el("a", "entry-link");
+    setText(link, "ledger.view");
     link.href = opts.url;
     link.target = "_blank";
     link.rel = "noreferrer";
-    link.setAttribute("aria-label", `View ${opts.title} on the ${opts.chain?.name ?? ""} explorer`);
+    setAttr(link, "aria-label", "ledger.viewLabel", { title: "raw" in opts.title ? opts.title.raw : opts.title, chain: opts.chain?.name ?? "" });
     li.append(link);
   }
   ledger.prepend(li);
@@ -767,12 +890,12 @@ kit.on("*", (payload: any) => {
   const eventError: any = values?.error ?? values?.data?.error;
   const normalized = state === "success" ? "success" : state === "error" ? "error" : "pending";
 
-  let detail: string;
+  let detail: Text;
   if (normalized === "error") {
     detail = friendlyError(eventError, values?.errorMessage);
     console.warn("Bridge step failed:", method, values);
   } else {
-    detail = txHash ? `Tx ${shortAddress(txHash)}` : normalized === "success" ? "Confirmed" : "Waiting…";
+    detail = txHash ? msg("ledger.tx", { hash: shortAddress(txHash) }) : msg(normalized === "success" ? "ledger.confirmed" : "ledger.waiting");
   }
 
   if (key) {
@@ -782,21 +905,21 @@ kit.on("*", (payload: any) => {
       const s = stepEl(prev).dataset.state;
       if (s === "idle" || s === "active") setStep(prev, prev === "approve" ? "skipped" : "done");
     }
-    const link = url ? { url, label: `${txHash ? shortAddress(txHash) : "Transaction"} on ${stepChain.name} ↗` } : undefined;
+    const link = url && txHash ? { url, label: msg("step.link", { tx: shortAddress(txHash), chain: stepChain.name }) } : undefined;
     if (normalized === "success") {
-      setStep(key, "done", "", link);
+      setStep(key, "done", undefined, link);
       const next = STEP_ORDER[idx + 1];
-      if (next) setStep(next, "active", next === "attestation" ? "Waiting for Circle" : next === "mint" ? "Confirm in wallet" : "Confirm in wallet");
+      if (next) setStep(next, "active", next === "attestation" ? "step.waitingCircle" : "step.confirm");
     } else if (normalized === "error") {
-      setStep(key, "error", "", link);
+      setStep(key, "error", undefined, link);
     } else {
-      setStep(key, "active", "", link);
+      setStep(key, "active", undefined, link);
     }
-    setChip(logStatus, `${STEP_TITLES[key]}…`, "live");
+    setChip(logStatus, msg("chip.step", { step: msg(STEP_TITLES[key]) }), "live");
   }
 
   addLedgerEntry({
-    title: key ? STEP_TITLES[key] : method,
+    title: key ? msg(STEP_TITLES[key]) : raw(method),
     chain: key === "attestation" ? undefined : stepChain,
     state: normalized,
     detail,
@@ -831,8 +954,9 @@ async function runBridge() {
     setHint(amountError, "error");
     return;
   }
-  // Normalize e.g. "1." or ".5" to "1" / "0.5" before passing it to App Kit.
-  const amount = formatUnits(parseUnits(amountInput.value.trim(), USDC_DECIMALS), USDC_DECIMALS);
+  // Normalize e.g. "1.", ".5" or "0,5" to "1" / "0.5" before passing it to App Kit.
+  const amount = formatUnits(parseUnits(amountValue()!, USDC_DECIMALS), USDC_DECIMALS);
+  const shown = { amount };
   const from = chain(fromKey);
   const to = chain(toKey);
   run = { from, to };
@@ -840,13 +964,13 @@ async function runBridge() {
   lockForm(true);
   bridgeBtn.disabled = true;
   bridgeBtn.classList.add("loading");
-  bridgeBtn.textContent = "Bridging…";
+  setText(bridgeBtn, "button.bridging");
   resetSteps();
   stepsEl.classList.add("running");
-  setChip(progressState, "In progress", "live");
-  setChip(logStatus, "Switching network…", "live");
-  setStep("approve", "active", "Preparing…");
-  setHint(`Sending ${amount} USDC from ${from.name} to ${to.name}. Keep this tab open.`);
+  setChip(progressState, "chip.inProgress", "live");
+  setChip(logStatus, "chip.switching", "live");
+  setStep("approve", "active", "step.preparing");
+  setHint(msg("hint.sending", { amount: shown, from: from.name, to: to.name }));
 
   try {
     const adapter = await createViemAdapterFromProvider({
@@ -865,8 +989,8 @@ async function runBridge() {
     await ensureChainRegistered(connectedProvider, from);
     walletChainId = from.chainId;
     updateNetworkInfo();
-    setStep("approve", "active", "Confirm in wallet");
-    setChip(logStatus, "Waiting for wallet…", "live");
+    setStep("approve", "active", "step.confirm");
+    setChip(logStatus, "chip.waitingWallet", "live");
 
     let result: any = await kit.bridge({
       from: { adapter, chain: from.key as any },
@@ -876,32 +1000,31 @@ async function runBridge() {
 
     // Retry once, but never when the user rejected the request in the wallet.
     if (result.state === "error" && !wasRejectedByUser(result)) {
-      addLedgerEntry({ title: "Retrying", state: "pending", detail: "The first attempt failed, trying once more" });
+      addLedgerEntry({ title: msg("ledger.retrying"), state: "pending", detail: msg("ledger.retryingDetail") });
       result = await kit.retryBridge(result, { from: adapter, to: adapter });
     }
 
     if (result.state === "error") {
-      if (wasRejectedByUser(result)) throw new UserRejectedError("Transaction rejected in your wallet. Nothing was retried.");
+      if (wasRejectedByUser(result)) throw new UserRejectedError(msg("hint.txRejected"));
       const failed = failedStep(result);
-      throw new Error(friendlyError(failed?.error, failed?.errorMessage));
+      throw new LocalizedError(friendlyError(failed?.error, failed?.errorMessage));
     }
 
     for (const k of STEP_ORDER) if (stepEl(k).dataset.state !== "done" && stepEl(k).dataset.state !== "skipped") setStep(k, "done");
-    setChip(progressState, "Complete", "done");
-    setChip(logStatus, "Done", "done");
-    setHint(`Done: ${amount} USDC is now on ${to.name}.`, "success");
-    toast("Bridge complete", `${amount} USDC arrived on ${to.name}.`, "success");
+    setChip(progressState, "chip.complete", "done");
+    setChip(logStatus, "chip.done", "done");
+    setHint(msg("hint.done", { amount: shown, to: to.name }), "success");
+    toast("toast.bridgeComplete", msg("toast.bridgeCompleteBody", { amount: shown, to: to.name }), "success");
   } catch (err: any) {
     console.warn("Bridge stopped:", err);
     const rejected = err instanceof UserRejectedError || isUserRejection(err);
-    for (const k of STEP_ORDER) if (stepEl(k).dataset.state === "active") setStep(k, "error", rejected ? "Rejected" : "Failed");
-    setChip(progressState, rejected ? "Rejected" : "Failed", "error");
-    setChip(logStatus, rejected ? "Rejected" : "Error", "error");
-    const detail = rejected && !(err instanceof UserRejectedError)
-      ? "Request rejected in your wallet. Nothing was retried."
-      : err instanceof UserRejectedError ? err.message : friendlyError(err);
-    setHint(detail || "Something went wrong during the bridge.", "error");
-    toast(rejected ? "Request rejected" : "Bridge failed", detail || "", "error");
+    for (const k of STEP_ORDER) if (stepEl(k).dataset.state === "active") setStep(k, "error", rejected ? "step.rejected" : "step.error");
+    setChip(progressState, rejected ? "chip.rejected" : "chip.failed", "error");
+    setChip(logStatus, rejected ? "chip.rejected" : "chip.error", "error");
+    let detail: Text = rejected && !(err instanceof UserRejectedError) ? msg("hint.requestRejected") : friendlyError(err);
+    if ("raw" in detail && !detail.raw) detail = msg("hint.bridgeFailed");
+    setHint(detail, "error");
+    toast(rejected ? "toast.requestRejected" : "toast.bridgeFailed", detail, "error");
   } finally {
     stepsEl.classList.remove("running");
     bridging = false;
@@ -917,7 +1040,7 @@ async function runBridge() {
 
 function applyThemeLabel() {
   const dark = document.documentElement.dataset.theme !== "light";
-  themeToggle.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+  setAttr(themeToggle, "aria-label", dark ? "theme.toLight" : "theme.toDark");
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#070b14" : "#f5f7fb");
 }
 
@@ -942,12 +1065,12 @@ connectBtn.addEventListener("click", connectBrowserWallet);
 bridgeBtn.addEventListener("click", runBridge);
 amountInput.addEventListener("input", setBridgeButtonState);
 amountInput.addEventListener("blur", () => {
-  const t = amountInput.value.trim();
-  if (!validateAmount(t) && t.startsWith(".")) amountInput.value = `0${t}`;
+  const text = amountInput.value.trim();
+  if (!validateAmount(text) && /^[.,]/.test(text)) amountInput.value = `0${text}`;
 });
 maxBtn.addEventListener("click", () => {
   if (sourceBalance === null) return;
-  amountInput.value = formatUnits(sourceBalance, USDC_DECIMALS);
+  amountInput.value = formatUnits(sourceBalance, USDC_DECIMALS).replace(".", decimalSeparator());
   setBridgeButtonState();
 });
 swapBtn.addEventListener("click", swapRoute);
@@ -981,15 +1104,47 @@ $("copy-address").addEventListener("click", async () => {
   if (!connectedAddress) return;
   try {
     await navigator.clipboard.writeText(connectedAddress);
-    toast("Address copied", shortAddress(connectedAddress), "success");
+    toast("toast.copied", shortAddress(connectedAddress), "success");
   } catch {
-    toast("Could not copy", connectedAddress, "error");
+    toast("toast.copyFailed", connectedAddress, "error");
   }
   toggleMenu(false);
 });
 $("disconnect-btn").addEventListener("click", () => void disconnect());
 
+// ---------------------------------------------------------------------------
+// Language
+// ---------------------------------------------------------------------------
+
+function applyLangButtons(lang: Lang) {
+  langSwitch.querySelectorAll<HTMLButtonElement>("button[data-lang]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
+  });
+}
+
+langSwitch.addEventListener("click", (e) => {
+  const button = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-lang]");
+  if (button) setLang(button.dataset.lang as Lang);
+});
+
+onLangChange((lang) => {
+  applyLangButtons(lang);
+  // Keep the typed amount but use the decimal separator of the new language.
+  const value = amountInput.value;
+  if (normalizeAmount(value) !== null) amountInput.value = value.replace(/[.,]/, decimalSeparator());
+  renderRoute();
+  renderBalances();
+  if (!picker.hidden) renderChainList();
+});
+
+if (getLang() !== "en") amountInput.value = amountInput.value.replace(".", decimalSeparator());
+applyTranslations();
+applyLangButtons(getLang());
 applyThemeLabel();
+setChip(progressState, "chip.ready");
+setChip(logStatus, "chip.idle");
+setHint("hint.default");
 resetSteps();
 renderRoute();
+document.documentElement.classList.remove("i18n-pending");
 void tryRestoreSession();
