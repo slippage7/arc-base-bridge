@@ -39,7 +39,9 @@ To use the bridge, ensure your wallet is configured with the following networks:
   
 - **Arc Testnet**
   - Chain ID: `5042002` (0x4cef52)
-  - RPC URL: `https://arc-testnet.rpc.thirdweb.com` (or `https://rpc.testnet.arc.network`)
+  - RPC URL: `https://rpc.testnet.arc.io` (fallbacks: `https://arc-testnet.rpc.thirdweb.com`, `https://arc-testnet.drpc.org`)
+  - Currency symbol: `USDC` (Arc uses USDC as native gas)
+  - Block explorer: `https://explorer.testnet.arc.io`
 
 *Note: The application will automatically attempt to add these networks to your wallet if they are missing.*
 

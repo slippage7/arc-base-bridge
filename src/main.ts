@@ -9,6 +9,11 @@ import { AppKit } from "@circle-fin/app-kit";
 
 type ChainKey = "base" | "arc";
 
+// Official Arc Testnet RPC and explorer.
+// (The old rpc.testnet.arc.network host is retired and testnet.arcscan.app is outdated.)
+const ARC_RPC_URL = "https://rpc.testnet.arc.io";
+const ARC_EXPLORER_URL = "https://explorer.testnet.arc.io";
+
 const CHAINS: Record<ChainKey, { appKitId: string; label: string; sub: string; explorerTx: (hash: string) => string }> = {
   base: {
     appKitId: "Base_Sepolia",
@@ -20,7 +25,7 @@ const CHAINS: Record<ChainKey, { appKitId: string; label: string; sub: string; e
     appKitId: "Arc_Testnet",
     label: "Arc Testnet",
     sub: "USDC-denominated gas",
-    explorerTx: (hash) => `https://testnet.arcscan.app/tx/${hash}`,
+    explorerTx: (hash) => `${ARC_EXPLORER_URL}/tx/${hash}`,
   },
 };
 
@@ -53,12 +58,12 @@ const CHAIN_PARAMS: Record<
     chainId: "0x4cef52",
     chainName: "Arc Testnet",
     rpcUrls: [
+      ARC_RPC_URL,
       "https://arc-testnet.rpc.thirdweb.com",
       "https://arc-testnet.drpc.org",
-      "https://rpc.testnet.arc.network"
     ],
     nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-    blockExplorerUrls: ["https://testnet.arcscan.app"],
+    blockExplorerUrls: [ARC_EXPLORER_URL],
   },
 };
 
@@ -237,8 +242,13 @@ kit.on("*", (payload: any) => {
   const values = payload?.values ?? payload;
   const name: string = values?.name ?? payload?.method ?? "event";
   const state: string = values?.state ?? "pending";
-  const explorerUrl: string | undefined = values?.explorerUrl ?? values?.data?.explorerUrl;
   const txHash: string | undefined = values?.txHash ?? values?.data?.txHash;
+  // Build the explorer link ourselves so it always uses the current explorer domains.
+  // The mint step happens on the destination chain, everything else on the source chain.
+  const stepChain: ChainKey = /mint/i.test(`${name} ${payload?.method ?? ""}`) ? toKey : fromKey;
+  const explorerUrl: string | undefined = txHash
+    ? CHAINS[stepChain].explorerTx(txHash)
+    : values?.explorerUrl ?? values?.data?.explorerUrl;
   const eventError: any = values?.error ?? values?.data?.error;
 
   const normalizedState = state === "success" ? "success" : state === "error" ? "error" : "pending";
@@ -279,8 +289,8 @@ async function runBridge() {
       provider: connectedProvider,
       getPublicClient: ({ chain }) => {
         let rpcUrl = chain.rpcUrls.default.http[0];
-        if (chain.id === 5042002) { // Arc Testnet
-          rpcUrl = "https://arc-testnet.rpc.thirdweb.com";
+        if (chain.id === 5042002) { // Arc Testnet: always use the official RPC
+          rpcUrl = ARC_RPC_URL;
         }
         return createPublicClient({ chain, transport: http(rpcUrl) });
       }
